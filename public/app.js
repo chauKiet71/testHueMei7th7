@@ -477,6 +477,7 @@ const state = {
   listeningSubtitleMode: localStorage.getItem("v2-listening-subtitle-mode") || "pinyin-zh",
   listeningPlaybackRate: [0.75, 1, 1.25, 1.5].includes(Number(localStorage.getItem("v2-listening-rate"))) ? Number(localStorage.getItem("v2-listening-rate")) : 1,
   listeningSaved: new Set(JSON.parse(localStorage.getItem("v2-listening-saved") || "[]")),
+  mobileReturnTarget: null,
   user: readStoredStudentUser(),
   adminUser: readStoredAdminUser(),
   activities: JSON.parse(localStorage.getItem("v2-activities") || "[]"),
@@ -701,126 +702,7 @@ const listeningEpisodes = [
     progress: 50,
   }),
 ];
-
-function catalogLessonToListeningItem(lesson, context = {}) {
-  const topic = context.topic || {};
-  const level = context.level || {};
-  return buildItem({
-    id: lesson.id,
-    type: context.trackId,
-    kind: "catalog",
-    catalogTopicId: topic.id || "",
-    catalogLevelId: level.id || "",
-    title: lesson.title_vi || lesson.title_zh || "",
-    titleZh: lesson.title_zh || lesson.title_vi || "",
-    category: topic.label_vi || topic.source_topic_title_vi || topic.label_zh || "",
-    categoryZh: topic.label_zh || topic.source_topic_title_zh || topic.label_vi || "",
-    level: level.label_vi || topic.label_vi || "",
-    speaker: lesson.speaker || "",
-    titleAudioSrc: lesson.title_audio ? `/listening-app/${lesson.title_audio}` : "",
-    audioSrc: `/listening-app/${lesson.main_audio}`,
-    sentences: (lesson.sentences || []).map((sentence) => ({
-      id: sentence.id,
-      chinese: sentence.zh || "",
-      pinyin: sentence.pinyin || "",
-      vietnamese: sentence.vi || "",
-      start: Number(sentence.start || 0),
-      end: Number(sentence.end || 0),
-    })),
-    keywords: (lesson.keywords || []).map((keyword) => ({
-      chinese: keyword.zh || "",
-      pinyin: keyword.pinyin || "",
-      vietnamese: keyword.vi || "",
-      audioNormal: keyword.audio ? `/listening-app/${keyword.audio}` : "",
-      audioSlow: keyword.audio ? `/listening-app/${keyword.audio}` : "",
-    })),
-    is_free: true,
-    is_member_only: false,
-    member_cta: "",
-    created_at: "2026-07-04",
-    progress: 0,
-  });
-}
-
-function getCatalogLevelRows(levelId = "") {
-  const catalog = globalThis.pindaListeningCatalog;
-  if (!catalog || !Array.isArray(catalog.tracks)) return null;
-
-  const dialogue = catalog.tracks.find((track) => track.id === "dialogue");
-  const monologue = catalog.tracks.find((track) => track.id === "monologue");
-
-  if (String(levelId).startsWith("dialogue") && dialogue) {
-    const level = (dialogue.levels || []).find((item) => item.legacy_level_id === levelId);
-    if (!level) return [];
-    const selectedTopic = (level.topics || []).find((topic) =>
-      (topic.lessons || []).some((lesson) => lesson.id === state.listeningSeedEpisodeId),
-    );
-    if (state.listeningSeedEpisodeId && selectedTopic) {
-      return (selectedTopic.lessons || []).map((lesson, index) => ({
-        no: index + 1,
-        episodeId: lesson.id,
-        title: lesson.title_vi || lesson.title_zh,
-        zh: lesson.title_zh || lesson.title_vi,
-        kind: "content",
-      }));
-    }
-    return (level.topics || []).map((topic, index) => ({
-      no: index + 1,
-      episodeId: topic.lessons?.[0]?.id || "",
-      title: topic.label_vi || topic.label_zh,
-      zh: topic.label_zh || topic.label_vi,
-      kind: "topic",
-    })).filter((row) => row.episodeId);
-  }
-
-  if (String(levelId).startsWith("monologue") && monologue) {
-    const topic = (monologue.topics || []).find((item) => item.legacy_level_id === levelId);
-    if (!topic) return [];
-    return (topic.lessons || []).map((lesson, index) => ({
-      no: index + 1,
-      episodeId: lesson.id,
-      title: lesson.title_vi || lesson.title_zh,
-      zh: lesson.title_zh || lesson.title_vi,
-      kind: "content",
-    }));
-  }
-
-  return [];
-}
-
-function appendCatalogListeningEpisodes() {
-  const catalog = globalThis.pindaListeningCatalog;
-  if (!catalog || !Array.isArray(catalog.tracks)) return;
-  const items = [];
-  (catalog.tracks || []).forEach((track) => {
-    if (track.id === "dialogue") {
-      (track.levels || []).forEach((level) => {
-        (level.topics || []).forEach((topic) => {
-          (topic.lessons || []).forEach((lesson) => {
-            items.push(catalogLessonToListeningItem(lesson, { trackId: track.id, level, topic }));
-          });
-        });
-      });
-      return;
-    }
-    (track.topics || []).forEach((topic) => {
-      (topic.lessons || []).forEach((lesson) => {
-        items.push(catalogLessonToListeningItem(lesson, { trackId: track.id, topic }));
-      });
-    });
-  });
-
-  items.forEach((episode) => {
-    const index = listeningEpisodes.findIndex((item) => item.id === episode.id);
-    if (index >= 0) {
-      listeningEpisodes[index] = episode;
-    } else {
-      listeningEpisodes.push(episode);
-    }
-  });
-}
-
-function disabledLegacyContentToListeningEpisode(content, index = 0) {
+function oldContentToListeningEpisode(content, index = 0) {
   const id = content.id || `dialogue-so-cap-topic-${index + 1}`;
   const idText = String(id);
   const isMonologue = idText.startsWith("monologue-");
@@ -861,9 +743,9 @@ function disabledLegacyContentToListeningEpisode(content, index = 0) {
 }
 
 
-if (false && typeof listeningContentMap !== "undefined") {
-  (Object.values(listeningContentMap)).forEach((content, index) => {
-    const episode = disabledLegacyContentToListeningEpisode(content, index);
+if (typeof listeningContentMap !== "undefined") {
+  Object.values(listeningContentMap).forEach((content, index) => {
+    const episode = oldContentToListeningEpisode(content, index);
     const existed = listeningEpisodes.some((item) => item.id === episode.id);
 
     if (!existed) {
@@ -975,8 +857,7 @@ function getMonologueListeningEpisodes(levelId = "") {
     "monologue-dien-thuyet": "monologue-dien-thuyet",
     "monologue-tap-chi": "monologue-tap-chi",
     "monologue-tam-ly-hoc": "monologue-tam-ly-hoc",
-    "monologue-chu-de-khac": "monologue-other",
-    "monologue-other": "monologue-other",
+    "monologue-chu-de-khac": "monologue-chu-de-khac",
   };
 
   const prefix = prefixMap[levelId] || "monologue-";
@@ -985,53 +866,6 @@ function getMonologueListeningEpisodes(levelId = "") {
     String(episode.id || "").startsWith(prefix)
   );
 }
-
-function repairUtf8MojibakeText(value) {
-  const text = String(value || "");
-  if (!/[\u00C0-\u00FF\u0100-\u017F\u0192\u02C6\u02DC\u2013-\u201E\u2020-\u2026\u2030\u2039-\u203A\u20AC\u2122]/.test(text)) return value;
-  const cp1252 = {
-    0x20AC: 0x80, 0x201A: 0x82, 0x0192: 0x83, 0x201E: 0x84, 0x2026: 0x85, 0x2020: 0x86,
-    0x2021: 0x87, 0x02C6: 0x88, 0x2030: 0x89, 0x0160: 0x8A, 0x2039: 0x8B, 0x0152: 0x8C,
-    0x017D: 0x8E, 0x2018: 0x91, 0x2019: 0x92, 0x201C: 0x93, 0x201D: 0x94, 0x2022: 0x95,
-    0x2013: 0x96, 0x2014: 0x97, 0x02DC: 0x98, 0x2122: 0x99, 0x0161: 0x9A, 0x203A: 0x9B,
-    0x0153: 0x9C, 0x017E: 0x9E, 0x0178: 0x9F,
-  };
-  try {
-    const bytes = Uint8Array.from(Array.from(text, (char) => {
-      const code = char.codePointAt(0) || 0;
-      return cp1252[code] ?? (code <= 255 ? code : 0x3F);
-    }));
-    const repaired = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-    return repaired.includes("\uFFFD") ? value : repaired;
-  } catch {
-    return value;
-  }
-}
-
-function shouldSkipListeningTextRepair(key = "") {
-  return /^(pinyin|vi|vietnamese|title|category|level|speaker)$/i.test(String(key || ""));
-}
-
-function repairListeningTextFields(value, key = "") {
-  if (typeof value === "string") return shouldSkipListeningTextRepair(key) ? value : repairUtf8MojibakeText(value);
-  if (Array.isArray(value)) {
-    value.forEach((item, index) => {
-      value[index] = repairListeningTextFields(item, key);
-    });
-    return value;
-  }
-  if (value && typeof value === "object") {
-    Object.keys(value).forEach((key) => {
-      value[key] = repairListeningTextFields(value[key], key);
-    });
-  }
-  return value;
-}
-
-appendCatalogListeningEpisodes();
-
-listeningEpisodes.forEach(repairListeningTextFields);
-
 function getListeningEpisode(episodeId = state.listeningEpisodeId) {
   return listeningEpisodes.find((episode) => episode.id === episodeId) || listeningEpisodes[0];
 }
@@ -2416,11 +2250,7 @@ function hasPremiumAccess() {
 }
 
 function areContentLocksTrusted() {
-  return state.contentLocksReady === true && state.contentLocksFailed !== true || shouldUseLocalContentLockFallback();
-}
-
-function shouldUseLocalContentLockFallback() {
-  return (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") && /DATABASE_URL|Backend/i.test(String(state.contentLocksError || backendDisabledMessage()));
+  return state.contentLocksReady === true && state.contentLocksFailed !== true;
 }
 
 function getHskLessonFreeItemLimit(lessonId) {
@@ -3382,7 +3212,89 @@ function logoutAdminUser() {
   return true;
 }
 
-function navigatePrimaryTab(target) {
+function captureMobileReturnTarget() {
+  return {
+    screen: state.screen,
+    module: state.module,
+    level: state.level,
+    hskLevelPicker: state.hskLevelPicker,
+    hskPendingLessonId: state.hskPendingLessonId,
+    hskContentType: state.hskContentType,
+    dailyPendingThemeId: state.dailyPendingThemeId,
+    dailyContentType: state.dailyContentType,
+    vocabFilterTab: state.vocabFilterTab,
+    listeningView: state.listeningView,
+    listeningLevelId: state.listeningLevelId,
+    listeningEpisodeId: state.listeningEpisodeId,
+    listeningSentenceIndex: state.listeningSentenceIndex,
+    listeningLessonsBackTarget: state.listeningLessonsBackTarget,
+    listeningBackTarget: state.listeningBackTarget,
+    listeningSeedEpisodeId: state.listeningSeedEpisodeId,
+    listeningTopicId: state.listeningTopicId,
+  };
+}
+
+function restoreMobileReturnTarget() {
+  const target = state.mobileReturnTarget;
+  state.mobileReturnTarget = null;
+
+  if (!target || !target.screen) {
+    navigatePrimaryTab("home", { skipMobileReturnCapture: true });
+    return;
+  }
+
+  if (target.module) state.module = target.module;
+  if (target.level && hskLevels[target.level]) state.level = target.level;
+  if (typeof target.hskLevelPicker === "boolean") state.hskLevelPicker = target.hskLevelPicker;
+  if (target.hskPendingLessonId !== undefined) state.hskPendingLessonId = target.hskPendingLessonId;
+  if (target.hskContentType !== undefined) state.hskContentType = target.hskContentType;
+  if (target.dailyPendingThemeId !== undefined) state.dailyPendingThemeId = target.dailyPendingThemeId;
+  if (target.dailyContentType !== undefined) state.dailyContentType = target.dailyContentType;
+  if (target.vocabFilterTab) state.vocabFilterTab = target.vocabFilterTab;
+  if (target.listeningView) state.listeningView = target.listeningView;
+  if (target.listeningLevelId) state.listeningLevelId = target.listeningLevelId;
+  if (target.listeningEpisodeId) state.listeningEpisodeId = target.listeningEpisodeId;
+  if (Number.isInteger(target.listeningSentenceIndex)) state.listeningSentenceIndex = target.listeningSentenceIndex;
+  if (target.listeningLessonsBackTarget) state.listeningLessonsBackTarget = target.listeningLessonsBackTarget;
+  if (target.listeningBackTarget !== undefined) state.listeningBackTarget = target.listeningBackTarget;
+  if (target.listeningSeedEpisodeId !== undefined) state.listeningSeedEpisodeId = target.listeningSeedEpisodeId;
+  if (target.listeningTopicId !== undefined) state.listeningTopicId = target.listeningTopicId;
+
+  if (target.screen === "course") {
+    renderCourse();
+    setScreen("course");
+  } else if (target.screen === "vocab") {
+    renderVocab();
+    setScreen("vocab");
+  } else if (target.screen === "listening") {
+    renderListening();
+    setScreen("listening");
+  } else if (target.screen === "account" && state.user) {
+    renderAccount();
+    setScreen("account");
+  } else if (target.screen === "subscriptions") {
+    setScreen("subscriptions");
+  } else {
+    navigatePrimaryTab("home", { skipMobileReturnCapture: true });
+    return;
+  }
+
+  scrollAppToTop();
+  $("#mobileMenu")?.classList.remove("active");
+}
+
+function currentPrimaryTargetForMobileReturn() {
+  if (state.screen === "course") return state.module === "daily" ? "daily" : "hsk";
+  if (state.screen === "listening") return "listening";
+  return state.screen;
+}
+
+function navigatePrimaryTab(target, options = {}) {
+  const normalizedTarget = target === "write" ? "hsk" : target === "listen" ? "listening" : target;
+  if (!options.skipMobileReturnCapture && (normalizedTarget === "hsk" || normalizedTarget === "listening") && currentPrimaryTargetForMobileReturn() !== normalizedTarget) {
+    state.mobileReturnTarget = captureMobileReturnTarget();
+  }
+
   state.fromRoadmap = false;
   state.dailyPendingThemeId = "";
   state.dailyContentType = "";
@@ -3485,6 +3397,12 @@ function readPersistedRoute() {
     return JSON.parse(localStorage.getItem(APP_ROUTE_STORAGE_KEY) || "null");
   } catch {
     return null;
+  }
+}
+
+function saveActiveRoute(screenKey) {
+  if (state.screen === screenKey) {
+    savePersistedRoute();
   }
 }
 
@@ -6200,7 +6118,7 @@ function renderAppDesktopSidebarHTML(activeNavOverride = "") {
         <span class="home-desktop-brand-icon" aria-hidden="true">✎</span>
         <div>
           <strong>${isVi ? "HuaMei" : "HuaMei"}</strong>
-          <small>${isVi ? "Học đúng - Nhớ lâu" : "写好字 · 记得牢"}</small>
+          <small>${isVi ? "Học đúng - Nhớ lâu" : "学得准 – 记得稳"}</small>
         </div>
       </div>
       <nav class="home-desktop-nav">
@@ -6252,7 +6170,7 @@ function renderMobilePageReturnBar(activeNav = "") {
   };
   return `
     <div class="mobile-page-return-bar mobile-page-return-bar--${escapeAttr(activeNav)}" aria-label="${escapeAttr(labels[activeNav] || "")}">
-      <button type="button" class="mobile-page-return-btn" data-mobile-page-back aria-label="${state.lang === "vi" ? "Quay lại trang chủ" : "返回首页"}">
+      <button type="button" class="mobile-page-return-btn" data-mobile-page-back aria-label="${state.lang === "vi" ? "Quay lại trang trước" : "返回上一页"}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M15 18l-6-6 6-6" />
         </svg>
@@ -6301,6 +6219,7 @@ function setScreenWithDesktopShell(screenKey, innerHTML, shellClass = "", active
   if (!node) return;
   const scrollSnapshot = options.preserveScroll ? getAppScrollSnapshot() : null;
   node.innerHTML = wrapWithAppDesktopShell(innerHTML, shellClass, activeNav);
+  saveActiveRoute(screenKey);
   if (scrollSnapshot) restoreAppScrollSnapshot(scrollSnapshot);
   else scrollAppToTop();
 }
@@ -6330,7 +6249,7 @@ const listeningCategories = [
       { id: "monologue-dien-thuyet", vi: "Diễn thuyết", zh: "演讲", rowIcon: "🎤", descVi: "Các bài diễn thuyết nổi tiếng", descZh: "著名演讲文章" },
       { id: "monologue-tap-chi", vi: "Tạp chí", zh: "杂志", rowIcon: "📖", descVi: "Bài viết từ tạp chí, báo chí", descZh: "杂志报刊文章" },
       { id: "monologue-tam-ly-hoc", vi: "Tâm lý học", zh: "心理学", rowIcon: "🎓", descVi: "Chủ đề tâm lý, cảm xúc, hành vi", descZh: "心理、情感、行为主题" },
-      { id: "monologue-other", vi: "Chủ Đề Khác", zh: "其他主题", rowIcon: "⭐", descVi: "Nhiều chủ đề thú vị khác", descZh: "更多有趣主题" },
+      { id: "monologue-chu-de-khac", vi: "Chủ Đề Khác", zh: "心理学", rowIcon: "⭐", descVi: "Nhiều chủ đề thú vị khác", descZh: "更多有趣主题" },
     ],
 
   },
@@ -6380,7 +6299,7 @@ function renderListeningLevelGateway(options = {}) {
   setScreenWithDesktopShell("listening", `
     <section class="listening-gateway-screen">
       <header class="listening-gateway-hero">
-        <button class="listening-gateway-back-btn" type="button" data-listening-gateway-back aria-label="${isVi ? "Quay lại trang chủ" : "返回首页"}">
+        <button class="listening-gateway-back-btn" type="button" data-listening-gateway-back aria-label="${isVi ? "Quay lại trang trước" : "返回上一页"}">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M15 18l-6-6 6-6" />
           </svg>
@@ -6630,9 +6549,6 @@ function getListeningCatalogTopic(topicId = state.listeningTopicId) {
 }
 
 function getListeningLevelLessons(levelId = state.listeningLevelId) {
-  const catalogLevelRows = getCatalogLevelRows(levelId);
-  if (catalogLevelRows) return catalogLevelRows;
-
   const isMonologue = String(levelId).startsWith("monologue");
   const realSource = isMonologue
     ? getMonologueListeningEpisodes(levelId)
@@ -6750,7 +6666,7 @@ function renderListening(options = {}) {
     renderListeningDetail(options);
     return;
   }
-  return renderListeningDashboard(options);
+  renderListeningDashboard();
 }
 
 function renderListeningDashboard() {
@@ -7088,8 +7004,6 @@ const translationToggleLabel = showVietnamese
     const keywordMeta = typeof word === "string" ? "" : [word.pinyin, word.vietnamese].filter(Boolean).join(" · ");
     return `<button type="button" data-listening-keyword="${index}" title="${escapeAttr(keywordMeta)}">${escapeHtml(keywordText)}</button>`;
   }).join("");
-  const initialAudioSrc = episode.titleAudioSrc || episode.audioSrc;
-  const initialAudioPhase = episode.titleAudioSrc ? "title" : "main";
   const nextSentencesHTML = episode.sentences
     .map((sentence, index) => ({ sentence, index }))
     .filter((item) => item.index !== currentIndex)
@@ -7212,7 +7126,7 @@ const translationToggleLabel = showVietnamese
       <section class="listening-detail-hero listening-detail-hero--image" aria-hidden="true"></section>
 
       <section class="listening-player-card">
-        <audio id="listeningAudio" src="${escapeAttr(initialAudioSrc)}" preload="metadata" data-listening-audio-phase="${escapeAttr(initialAudioPhase)}"></audio>
+        <audio id="listeningAudio" src="${escapeAttr(episode.audioSrc)}" preload="metadata"></audio>
         <div class="listening-player-status">
           <div>
             <strong id="listeningStatusTitle">${isVi ? "Đã tạm dừng" : "已暂停"}</strong>
@@ -8320,12 +8234,8 @@ function renderListeningLevelLessons(options = {}) {
       return `<i style="--h:${h}px;--d:${d}s"></i>`;
     }).join("");
 
-    const rowActionAttr = lesson.kind === "topic"
-      ? `data-listening-topic-list="${escapeAttr(lesson.episodeId)}" data-listening-topic-level="${escapeAttr(state.listeningLevelId)}"`
-      : `data-listening-topic-open="${escapeAttr(lesson.episodeId)}"`;
-
     return `
-      <button class="listening-lesson-row listening-lesson-row--${escapeAttr(lesson.tone || "mint")}" type="button" ${rowActionAttr}>
+      <button class="listening-lesson-row listening-lesson-row--${escapeAttr(lesson.tone || "mint")}" type="button" data-listening-topic-open="${escapeAttr(lesson.episodeId)}">
   <span class="listening-lesson-play">
     <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
   </span>
@@ -8780,75 +8690,6 @@ function setListeningPlaybackUi(isPlaying) {
   setListeningWaveformActive(isPlaying);
 }
 
-function setListeningAudioSource(audio, src, phase) {
-  if (!audio || !src) return;
-  if (audio.getAttribute("src") !== src) {
-    audio.setAttribute("src", src);
-    audio.load?.();
-  }
-  audio.dataset.listeningAudioPhase = phase;
-  applyListeningPlaybackRate(audio);
-}
-
-function prepareListeningTitleAudio(audio, episode) {
-  if (!audio || !episode?.titleAudioSrc) return false;
-  setListeningAudioSource(audio, episode.titleAudioSrc, "title");
-  audio.currentTime = 0;
-  return true;
-}
-
-function prepareListeningMainAudio(audio, episode, startTime = null) {
-  if (!audio || !episode?.audioSrc) return false;
-  setListeningAudioSource(audio, episode.audioSrc, "main");
-  if (Number.isFinite(Number(startTime))) {
-    audio.currentTime = Number(startTime);
-  }
-  return true;
-}
-
-function shouldStartWithListeningTitle(audio, episode) {
-  if (!audio || !episode?.titleAudioSrc || !episode?.audioSrc) return false;
-  if (audio.dataset.listeningAudioPhase === "title") return false;
-  return (audio.currentTime || 0) < 0.2;
-}
-
-function playListeningAudio(audio) {
-  return audio.play()
-    .then(() => {
-      if (!listeningPlaybackRequested) {
-        audio.pause();
-        return;
-      }
-      syncListeningAudioUi();
-    })
-    .catch(() => {
-      if (!listeningPlaybackRequested) {
-        syncListeningAudioUi();
-        return;
-      }
-      if (!speakListeningSentence()) syncListeningAudioUi();
-    });
-}
-
-function playListeningTitleThenMain(audio, episode) {
-  if (!prepareListeningTitleAudio(audio, episode)) {
-    prepareListeningMainAudio(audio, episode);
-  }
-  return playListeningAudio(audio);
-}
-
-function continueListeningAfterTitleAudio(audio) {
-  const episode = getListeningEpisode();
-  if (!audio || audio.dataset.listeningAudioPhase !== "title" || !listeningPlaybackRequested) return;
-  if (!prepareListeningMainAudio(audio, episode, 0)) {
-    listeningPlaybackRequested = false;
-    syncListeningAudioUi();
-    return;
-  }
-  setListeningPlaybackUi(true);
-  playListeningAudio(audio);
-}
-
 function syncListeningAudioUi() {
   if (state.screen !== "listening" || state.listeningView !== "detail") return;
   const episode = getListeningEpisode();
@@ -8891,10 +8732,24 @@ function seekListeningSentence(index, autoplay = false) {
 
   if (autoplay && audio && episode.audioSrc) {
     listeningPlaybackRequested = true;
-    prepareListeningMainAudio(audio, episode, startTime);
+    audio.currentTime = startTime;
     refreshListeningActiveSentenceUi();
     setListeningPlaybackUi(true);
-    playListeningAudio(audio);
+    audio.play()
+      .then(() => {
+        if (!listeningPlaybackRequested) {
+          audio.pause();
+          return;
+        }
+        syncListeningAudioUi();
+      })
+      .catch(() => {
+        if (!listeningPlaybackRequested) {
+          syncListeningAudioUi();
+          return;
+        }
+        if (!speakListeningSentence()) syncListeningAudioUi();
+      });
     return;
   }
 
@@ -8944,14 +8799,21 @@ function toggleListeningPlayback() {
 
   listeningPlaybackRequested = true;
   setListeningPlaybackUi(true);
-  if (shouldStartWithListeningTitle(audio, episode)) {
-    playListeningTitleThenMain(audio, episode);
-  } else {
-    if (audio.dataset.listeningAudioPhase !== "title") {
-      prepareListeningMainAudio(audio, episode);
-    }
-    playListeningAudio(audio);
-  }
+  audio.play()
+    .then(() => {
+      if (!listeningPlaybackRequested) {
+        audio.pause();
+        return;
+      }
+      syncListeningAudioUi();
+    })
+    .catch(() => {
+      if (!listeningPlaybackRequested) {
+        syncListeningAudioUi();
+        return;
+      }
+      if (!speakListeningSentence()) syncListeningAudioUi();
+    });
 }
 
 function bindListeningAudioEvents() {
@@ -8962,7 +8824,6 @@ function bindListeningAudioEvents() {
     ["loadedmetadata", "timeupdate", "play", "pause", "ended", "error"].forEach((eventName) => {
       audio.addEventListener(eventName, syncListeningAudioUi);
     });
-    audio.addEventListener("ended", () => continueListeningAfterTitleAudio(audio));
   } else if (audio) {
     applyListeningPlaybackRate(audio);
   }
@@ -9448,7 +9309,7 @@ function handleMobilePageBack() {
       return;
     }
 
-    navigatePrimaryTab("home");
+    restoreMobileReturnTarget();
     return;
   }
 
@@ -9468,6 +9329,11 @@ function handleMobilePageBack() {
         backToHskLevelPicker();
       }
       scrollAppToTop();
+      return;
+    }
+
+    if (state.module === "hsk" && state.hskLevelPicker) {
+      restoreMobileReturnTarget();
       return;
     }
   }
@@ -9619,7 +9485,7 @@ function renderHskLevelPickerHTML() {
   return `
     <section class="hsk-level-picker">
 <div class="hsk-level-hero">
-        <button class="hsk-level-hero-back-btn" type="button" data-hsk-level-picker-back aria-label="${isVi ? "Quay lại trang chủ" : "返回首页"}">
+        <button class="hsk-level-hero-back-btn" type="button" data-hsk-level-picker-back aria-label="${isVi ? "Quay lại trang trước" : "返回上一页"}">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M15 18l-6-6 6-6" />
           </svg>
@@ -10561,6 +10427,7 @@ function renderPractice() {
       <button id="nextBtn" class="primary" type="button"><span>↵</span>${t("next")}</button>
     </footer>
   `;
+  saveActiveRoute("practice");
   focusInput();
 }
 
@@ -10799,6 +10666,7 @@ function renderComplete() {
       </div>
     </section>
   `;
+  saveActiveRoute("complete");
 }
 
 function chooseChineseVoice() {
@@ -10999,7 +10867,7 @@ function bindEvents() {
     if (state.screen === "listening") {
       const listeningGatewayBackBtn = event.target.closest("[data-listening-gateway-back]");
       if (listeningGatewayBackBtn) {
-        navigatePrimaryTab("home");
+        restoreMobileReturnTarget();
         return;
       }
       const listeningStartBtn = event.target.closest("[data-listening-start]");
@@ -12008,7 +11876,7 @@ function bindEvents() {
     }
     const hskLevelPickerBackBtn = event.target.closest("[data-hsk-level-picker-back]");
     if (hskLevelPickerBackBtn) {
-      navigatePrimaryTab("home");
+      restoreMobileReturnTarget();
       return;
     }
     const hskLevelBackBtn = event.target.closest("[data-hsk-level-back]");
@@ -12458,25 +12326,10 @@ function renderAll() {
   if (state.screen === "account") renderAccount();
 }
 
-function applyRouteFromLocation() {
-  const pathname = window.location.pathname;
-  const options = {};
-  // Legacy listening detail contract sample: 一个人生活，是自由还是孤单？ 阿南，你能接受一个人生活吗？
-  if (pathname === "/listening-app/listening") {
-    state.screen = "listening"; state.listeningView = "levels";
-    renderListeningLevelGateway(options); return true;
-  }
-  const listeningDetailMatch = pathname.match(/^\/listening-app\/listening\/([^/]+)$/);
-  if (!listeningDetailMatch) return false;
-  const episodeId = decodeURIComponent(listeningDetailMatch[1]);
-  state.screen = "listening"; state.listeningEpisodeId = episodeId;
-  state.listeningView = "detail"; state.listeningSentenceIndex = 0;
-  renderListeningDetail(options); return true;
-}
-
 function init() {
   console.info(VIETNAMESE_QA_HOOK);
   bindEvents();
+  window.addEventListener("beforeunload", savePersistedRoute);
   Promise.allSettled([
     refreshCurrentUserStatus(),
     loadContentLocks(),
@@ -12490,7 +12343,6 @@ function init() {
         loadAdminUsers();
       }
     } else {
-      if (applyRouteFromLocation()) { return; }
       const restored = restorePersistedRoute();
       if (!restored) {
         setScreen("home");
